@@ -210,6 +210,8 @@ class PtyManager {
       : ['-c', `claude ${args.join(' ')}`];
 
     console.log(`[PTY] [${instance.id}] Spawning: ${shell} ${shellArgs.join(' ')}`);
+    console.log(`[PTY] [${instance.id}] ANTHROPIC_BASE_URL=${env.ANTHROPIC_BASE_URL || '(not set)'}`);
+    console.log(`[PTY] [${instance.id}] ANTHROPIC_API_KEY=${env.ANTHROPIC_API_KEY ? env.ANTHROPIC_API_KEY.slice(0, 8) + '...' : '(not set)'}`);
 
     let ptyProcess: pty.IPty;
     try {

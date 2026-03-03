@@ -25,11 +25,13 @@ export function ensureIsolatedConfig(
   const isolatedDir = path.join(CONFIGS_DIR, instanceId);
   const isolatedSettings = path.join(isolatedDir, 'settings.json');
 
-  if (!fs.existsSync(isolatedDir)) {
+  const isNew = !fs.existsSync(isolatedDir);
+  if (isNew) {
     fs.mkdirSync(isolatedDir, { recursive: true });
   }
 
-  // Read global settings as base
+  // Read global settings as base, but replace env entirely to avoid
+  // inheriting auth tokens / base URLs that conflict with this instance.
   let settings: Record<string, any> = {};
   const globalSettings = path.join(GLOBAL_CLAUDE_DIR, 'settings.json');
   if (fs.existsSync(globalSettings)) {
@@ -39,20 +41,48 @@ export function ensureIsolatedConfig(
       settings = {};
     }
   }
-  if (!settings.env) {
-    settings.env = {};
-  }
 
-  // Override with instance-specific API config
+  // Clean slate for env — only use this instance's API config
+  settings.env = {};
   if (apiBaseUrl) {
     settings.env.ANTHROPIC_BASE_URL = apiBaseUrl;
   }
   if (apiKey) {
     settings.env.ANTHROPIC_API_KEY = apiKey;
-    delete settings.env.ANTHROPIC_AUTH_TOKEN;
   }
 
   fs.writeFileSync(isolatedSettings, JSON.stringify(settings, null, 2));
+
+  // For new config dirs: seed .claude.json with onboarding/trust flags
+  // so Claude Code skips the first-run connectivity check to api.anthropic.com.
+  const isolatedClaudeJson = path.join(isolatedDir, '.claude.json');
+  if (isNew || !fs.existsSync(isolatedClaudeJson)) {
+    // Try to copy from global ~/.claude/.claude.json as base
+    let claudeJson: Record<string, any> = {};
+    const globalClaudeJson = path.join(GLOBAL_CLAUDE_DIR, '.claude.json');
+    if (fs.existsSync(globalClaudeJson)) {
+      try {
+        claudeJson = JSON.parse(fs.readFileSync(globalClaudeJson, 'utf-8'));
+      } catch {
+        claudeJson = {};
+      }
+    }
+    // Ensure onboarding is marked complete so startup doesn't check api.anthropic.com
+    claudeJson.hasCompletedOnboarding = true;
+    claudeJson.lastOnboardingVersion = claudeJson.lastOnboardingVersion || '2.1.0';
+    // Pre-approve the custom API key to skip the approval prompt
+    if (apiKey) {
+      const keySuffix = apiKey.slice(-20);
+      if (!claudeJson.customApiKeyResponses) {
+        claudeJson.customApiKeyResponses = { approved: [], rejected: [] };
+      }
+      if (!claudeJson.customApiKeyResponses.approved.includes(keySuffix)) {
+        claudeJson.customApiKeyResponses.approved.push(keySuffix);
+      }
+    }
+    fs.writeFileSync(isolatedClaudeJson, JSON.stringify(claudeJson, null, 2));
+  }
+
   console.log(`[ConfigIsolation] Created/updated config for ${instanceId} → ${isolatedDir}`);
 
   return isolatedDir;

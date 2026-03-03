@@ -105,9 +105,13 @@ router.post('/:id/start', (req, res) => {
     return res.status(404).json({ error: 'Instance not found' });
   }
 
+  if (!instance.apiKey) {
+    return res.status(400).json({ error: '请先配置 API Key 再启动实例' });
+  }
+
   const success = ptyManager.startInstance(instance);
   if (!success) {
-    return res.status(500).json({ error: 'Failed to start instance. Check working directory.' });
+    return res.status(500).json({ error: '启动失败，请检查工作目录是否存在' });
   }
 
   res.json(withRuntime(instance));

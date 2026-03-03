@@ -20,9 +20,21 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+// Pending auth prompts: instanceId → instance name (for tray notifications)
+const pendingAuthPrompts = new Map<string, string>();
+
 // REST API routes
 app.use('/api/instances', instancesRouter);
 app.use('/api/filesystem', filesystemRouter);
+
+// Notification endpoint for tray polling
+app.get('/api/notifications', (_req, res) => {
+  const items = Array.from(pendingAuthPrompts.entries()).map(([id, name]) => ({
+    instanceId: id,
+    instanceName: name,
+  }));
+  res.json(items);
+});
 
 // Serve static files in production
 const clientDist = path.resolve(__dirname, '../../client/dist');
@@ -85,6 +97,7 @@ io.on('connection', (socket) => {
 
   // Client sends keystrokes
   socket.on('pty:input', ({ instanceId, data }: { instanceId: string; data: string }) => {
+    pendingAuthPrompts.delete(instanceId);
     ptyManager.write(instanceId, data);
   });
 
@@ -106,6 +119,7 @@ ptyManager.onData((instanceId, event) => {
 
 // Forward PTY exit events
 ptyManager.onExit((instanceId, event) => {
+  pendingAuthPrompts.delete(instanceId);
   io.emit('instance:status', { instanceId, state: 'stopped' });
   io.to(`pty:${instanceId}`).emit('pty:exit', {
     instanceId,
@@ -116,6 +130,8 @@ ptyManager.onExit((instanceId, event) => {
 
 // Forward auth prompt notifications
 ptyManager.onAuthPrompt((instanceId) => {
+  const inst = store.getAll().find(i => i.id === instanceId);
+  if (inst) pendingAuthPrompts.set(instanceId, inst.name);
   io.emit('instance:authPrompt', { instanceId });
 });
 

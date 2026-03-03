@@ -36,6 +36,10 @@ const App: React.FC = () => {
     try {
       const res = await fetch(`/api/instances/${id}/start`, { method: 'POST' });
       const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '启动失败');
+        return;
+      }
       setInstances(prev => prev.map(i => i.id === id ? data : i));
       // Auto-select on start
       setSelectedId(id);
