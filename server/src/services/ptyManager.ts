@@ -16,7 +16,7 @@ function stripAnsi(text: string): string {
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ''); // control chars (keep \t \n \r)
 }
 
-// Patterns that indicate Claude Code is asking for user approval
+// Patterns that indicate Claude Code is asking for user action
 const AUTH_PATTERNS = [
   /Do you want to (?:proceed|create|allow|update|delete|remove|overwrite|replace|run|execute)/i,
   /Do you want to use this API key/i,
@@ -30,6 +30,9 @@ const AUTH_PATTERNS = [
   /1\.\s*Yes\s+2\.\s*Yes,\s*allow/i,
   /❯\s*1\.\s*Yes/,
   /Is this a project you.*trust/i,
+  // Interactive selection prompts (numbered list with navigation hints)
+  /Enter to select.*to navigate/i,
+  /Esc to cancel/,
 ];
 
 // Patterns that indicate Claude Code is idle (waiting for user input)
@@ -54,11 +57,16 @@ interface PtyInstance {
   bytesSinceIdle: number;
   tokenStats: TokenStats | null;
   lastUserPrompt: string;
+  inputBuffer: string;
+  outputting: boolean;
+  outputTimer: ReturnType<typeof setTimeout> | null;
+  pendingAuth: boolean;
 }
 
 const MAX_SCROLLBACK_CHARS = 100 * 1024; // 100KB per instance
 const MAX_LINE_BUFFER = 2000;
 const BUSY_THRESHOLD = 200;
+const OUTPUT_IDLE_TIMEOUT = 3000; // 3s no output → not outputting
 const LOGS_DIR = path.resolve(__dirname, '../../../data/logs');
 const TOKEN_REGEX = /Working[…\.]+\s+\(([^·]+)\s*·\s*[↓↑]\s*([\d,]+)\s*tokens/;
 
@@ -70,6 +78,8 @@ class PtyManager {
   private onTaskCompleteCallback: PtyEventCallback | null = null;
   private onTokenStatsCallback: PtyEventCallback | null = null;
   private onUserPromptCallback: PtyEventCallback | null = null;
+  private onOutputStateCallback: PtyEventCallback | null = null;
+  private onAuthClearedCallback: PtyEventCallback | null = null;
 
   onData(callback: PtyEventCallback): void {
     this.onDataCallback = callback;
@@ -93,6 +103,19 @@ class PtyManager {
 
   onUserPrompt(callback: PtyEventCallback): void {
     this.onUserPromptCallback = callback;
+  }
+
+  onOutputState(callback: PtyEventCallback): void {
+    this.onOutputStateCallback = callback;
+  }
+
+  onAuthCleared(callback: PtyEventCallback): void {
+    this.onAuthClearedCallback = callback;
+  }
+
+  isOutputting(instanceId: string): boolean {
+    const ptyInst = this.ptys.get(instanceId);
+    return ptyInst?.outputting ?? false;
   }
 
   getTokenStats(instanceId: string): TokenStats | null {
@@ -240,6 +263,10 @@ class PtyManager {
       bytesSinceIdle: 0,
       tokenStats: null,
       lastUserPrompt: '',
+      inputBuffer: '',
+      outputting: false,
+      outputTimer: null,
+      pendingAuth: false,
     };
 
     this.ptys.set(instance.id, ptyInst);
@@ -294,36 +321,66 @@ class PtyManager {
           }
         }
         if (authDetected) {
+          ptyInst.pendingAuth = true;
           this.onAuthPromptCallback(instance.id, { type: 'instance:authPrompt' });
           ptyInst.lineBuffer = '';
         }
       }
 
-      // User prompt detection — capture text after ❯ or > prompt marker
-      if (this.onUserPromptCallback) {
-        // Match "❯ " or "> " followed by user text (the prompt line)
-        const promptMatch = /[❯>]\s+(.+)/.exec(stripped);
-        if (promptMatch) {
-          const promptText = promptMatch[1].trim();
-          if (promptText.length > 0 && promptText !== ptyInst.lastUserPrompt) {
-            ptyInst.lastUserPrompt = promptText;
-            this.onUserPromptCallback(instance.id, { prompt: promptText });
+      // Output state + task completion detection
+      const visibleLen = stripped.trim().length;
+      ptyInst.bytesSinceIdle += stripped.length;
+
+      // Mark as outputting only when there's visible content
+      if (visibleLen > 0) {
+        ptyInst.busy = true;
+        if (!ptyInst.outputting && this.onOutputStateCallback) {
+          ptyInst.outputting = true;
+          this.onOutputStateCallback(instance.id, { outputting: true });
+        }
+        // Auth cleared: substantial output after auth prompt → user handled it
+        if (ptyInst.pendingAuth && ptyInst.bytesSinceIdle > BUSY_THRESHOLD) {
+          ptyInst.pendingAuth = false;
+          if (this.onAuthClearedCallback) {
+            this.onAuthClearedCallback(instance.id, {});
           }
         }
+        // Reset idle timer
+        if (ptyInst.outputTimer) clearTimeout(ptyInst.outputTimer);
+        ptyInst.outputTimer = setTimeout(() => {
+          ptyInst.outputTimer = null;
+          if (ptyInst.outputting) {
+            ptyInst.outputting = false;
+            if (this.onOutputStateCallback) {
+              this.onOutputStateCallback(instance.id, { outputting: false });
+            }
+          }
+        }, OUTPUT_IDLE_TIMEOUT);
       }
 
-      // Task completion detection
-      ptyInst.bytesSinceIdle += stripped.length;
-      if (stripped.trim().length > 0) {
-        ptyInst.busy = true;
-      }
-      if (this.onTaskCompleteCallback && ptyInst.busy && ptyInst.bytesSinceIdle > BUSY_THRESHOLD) {
+      // Idle prompt detected → immediately stop outputting + task complete
+      if (ptyInst.busy && ptyInst.bytesSinceIdle > BUSY_THRESHOLD) {
         for (const pattern of IDLE_PROMPT_PATTERNS) {
           if (pattern.test(ptyInst.lineBuffer)) {
-            this.onTaskCompleteCallback(instance.id, { type: 'instance:taskComplete' });
+            if (this.onTaskCompleteCallback) {
+              this.onTaskCompleteCallback(instance.id, { type: 'instance:taskComplete' });
+            }
             ptyInst.busy = false;
             ptyInst.bytesSinceIdle = 0;
             ptyInst.lineBuffer = '';
+            // Immediately clear outputting state
+            if (ptyInst.outputting && this.onOutputStateCallback) {
+              ptyInst.outputting = false;
+              if (ptyInst.outputTimer) { clearTimeout(ptyInst.outputTimer); ptyInst.outputTimer = null; }
+              this.onOutputStateCallback(instance.id, { outputting: false });
+            }
+            // Clear pending auth (user rejected or action finished)
+            if (ptyInst.pendingAuth) {
+              ptyInst.pendingAuth = false;
+              if (this.onAuthClearedCallback) {
+                this.onAuthClearedCallback(instance.id, {});
+              }
+            }
             break;
           }
         }
@@ -348,6 +405,27 @@ class PtyManager {
     const ptyInst = this.ptys.get(instanceId);
     if (!ptyInst) return false;
     ptyInst.pty.write(data);
+
+    // Track user input for prompt display
+    for (const ch of data) {
+      if (ch === '\r' || ch === '\n') {
+        const trimmed = ptyInst.inputBuffer.trim();
+        if (trimmed.length > 0) {
+          ptyInst.lastUserPrompt = trimmed;
+          if (this.onUserPromptCallback) {
+            this.onUserPromptCallback(instanceId, { prompt: trimmed });
+          }
+        }
+        ptyInst.inputBuffer = '';
+      } else if (ch === '\x7f' || ch === '\b') {
+        // Backspace
+        ptyInst.inputBuffer = ptyInst.inputBuffer.slice(0, -1);
+      } else if (ch.charCodeAt(0) >= 32 && !ch.startsWith('\x1b')) {
+        // Printable character (skip escape sequences)
+        ptyInst.inputBuffer += ch;
+      }
+    }
+
     return true;
   }
 
@@ -381,6 +459,7 @@ class PtyManager {
     // Remove from map first to prevent double-kill
     this.ptys.delete(instanceId);
 
+    if (ptyInst.outputTimer) clearTimeout(ptyInst.outputTimer);
     console.log(`[PTY] [${instanceId}] Stopping`);
     try {
       ptyInst.pty.kill();

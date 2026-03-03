@@ -11,7 +11,7 @@ import { Wifi, WifiOff } from 'lucide-react';
 const App: React.FC = () => {
   const {
     connected, instances, setInstances, socket, refreshInstances,
-    authPrompts, taskCompletes, tokenStats, userPrompts, clearAuthPrompt, clearTaskComplete,
+    authPrompts, taskCompletes, tokenStats, userPrompts, outputting, clearAuthPrompt, clearTaskComplete,
   } = useSocket();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingInstance, setEditingInstance] = useState<Instance | null>(null);
@@ -25,12 +25,11 @@ const App: React.FC = () => {
 
   const selectedInstance = instances.find(i => i.id === selectedId) || null;
 
-  // Unified select handler: clears notifications
+  // Unified select handler: clears task-complete badge (auth badge stays until resolved)
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
-    clearAuthPrompt(id);
     clearTaskComplete(id);
-  }, [clearAuthPrompt, clearTaskComplete]);
+  }, [clearTaskComplete]);
 
   const handleStart = useCallback(async (id: string) => {
     try {
@@ -43,12 +42,11 @@ const App: React.FC = () => {
       setInstances(prev => prev.map(i => i.id === id ? data : i));
       // Auto-select on start
       setSelectedId(id);
-      clearAuthPrompt(id);
       clearTaskComplete(id);
     } catch (err) {
       console.error('Failed to start instance:', err);
     }
-  }, [setInstances, clearAuthPrompt, clearTaskComplete]);
+  }, [setInstances, clearTaskComplete]);
 
   const handleStop = useCallback(async (id: string) => {
     try {
@@ -165,6 +163,7 @@ const App: React.FC = () => {
             taskCompletes={effectiveTaskCompletes}
             tokenStats={tokenStats}
             userPrompts={userPrompts}
+            outputting={outputting}
             onSelect={handleSelect}
             onStart={handleStart}
             onStop={handleStop}
@@ -183,6 +182,7 @@ const App: React.FC = () => {
               instance={selectedInstance}
               socket={socket}
               onClose={() => setSelectedId(null)}
+              onStart={() => handleStart(selectedInstance.id)}
             />
           ) : (
             <WelcomePanel />

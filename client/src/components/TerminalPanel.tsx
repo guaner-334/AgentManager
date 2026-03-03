@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { X, Download } from 'lucide-react';
+import { X, Download, Play } from 'lucide-react';
 import { InstanceWithRuntime } from '../types';
 import { Socket } from 'socket.io-client';
 
@@ -11,13 +11,15 @@ interface TerminalPanelProps {
   instance: InstanceWithRuntime;
   socket: Socket | null;
   onClose: () => void;
+  onStart: () => void;
 }
 
-export const TerminalPanel: React.FC<TerminalPanelProps> = ({ instance, socket, onClose }) => {
+export const TerminalPanel: React.FC<TerminalPanelProps> = ({ instance, socket, onClose, onStart }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const currentInstanceIdRef = useRef<string | null>(null);
+  const prevProcessStateRef = useRef(instance.runtime.processState);
 
   // Initialize xterm.js once on mount
   useEffect(() => {
@@ -122,6 +124,30 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ instance, socket, 
     };
   }, [instance.id, socket]);
 
+  // Re-sync terminal size when instance transitions to running
+  useEffect(() => {
+    const prevState = prevProcessStateRef.current;
+    prevProcessStateRef.current = instance.runtime.processState;
+
+    if (prevState !== 'running' && instance.runtime.processState === 'running') {
+      const term = xtermRef.current;
+      const fitAddon = fitAddonRef.current;
+      if (!term || !fitAddon || !socket) return;
+
+      // Clear previous output, re-fit, then re-attach with correct dimensions
+      term.clear();
+      term.reset();
+      requestAnimationFrame(() => {
+        fitAddon.fit();
+        socket.emit('pty:attach', {
+          instanceId: instance.id,
+          cols: term.cols,
+          rows: term.rows,
+        });
+      });
+    }
+  }, [instance.runtime.processState, instance.id, socket]);
+
   // Listen for PTY data from server
   useEffect(() => {
     if (!socket) return;
@@ -162,7 +188,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ instance, socket, 
   const isRunning = instance.runtime.processState === 'running';
 
   return (
-    <div className="flex flex-col h-full bg-gray-900">
+    <div className="flex flex-col h-full bg-gray-900 relative">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700 flex-shrink-0">
         <div className="min-w-0 flex-1">
@@ -188,10 +214,17 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ instance, socket, 
       {/* Terminal */}
       <div ref={terminalRef} className="flex-1 min-h-0 p-1" />
 
-      {/* Status bar when not running */}
+      {/* Start overlay when not running */}
       {!isRunning && (
-        <div className="px-4 py-2 text-xs text-gray-500 border-t border-gray-700 text-center flex-shrink-0">
-          终端未连接。请先启动实例。
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 z-10">
+          <p className="text-gray-500 text-sm mb-4">终端未连接</p>
+          <button
+            onClick={onStart}
+            className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
+          >
+            <Play size={16} />
+            启动实例
+          </button>
         </div>
       )}
     </div>

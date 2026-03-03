@@ -22,6 +22,8 @@ app.use(express.json());
 
 // Pending auth prompts: instanceId → instance name (for tray notifications)
 const pendingAuthPrompts = new Map<string, string>();
+// Pending task-complete notifications: instanceId → instance name (one-shot, cleared after poll)
+const pendingTaskDone = new Map<string, string>();
 
 // REST API routes
 app.use('/api/instances', instancesRouter);
@@ -29,11 +31,19 @@ app.use('/api/filesystem', filesystemRouter);
 
 // Notification endpoint for tray polling
 app.get('/api/notifications', (_req, res) => {
-  const items = Array.from(pendingAuthPrompts.entries()).map(([id, name]) => ({
+  const authItems = Array.from(pendingAuthPrompts.entries()).map(([id, name]) => ({
+    type: 'auth',
     instanceId: id,
     instanceName: name,
   }));
-  res.json(items);
+  const doneItems = Array.from(pendingTaskDone.entries()).map(([id, name]) => ({
+    type: 'taskDone',
+    instanceId: id,
+    instanceName: name,
+  }));
+  // Task-done notifications are one-shot: clear after returning
+  pendingTaskDone.clear();
+  res.json([...authItems, ...doneItems]);
 });
 
 // Serve static files in production
@@ -56,7 +66,10 @@ io.on('connection', (socket) => {
   const instances = store.getAll();
   const withRuntime = instances.map(inst => ({
     ...inst,
-    runtime: { processState: ptyManager.getState(inst.id) },
+    runtime: {
+      processState: ptyManager.getState(inst.id),
+      outputting: ptyManager.isOutputting(inst.id),
+    },
   }));
   socket.emit('instances:sync', withRuntime);
 
@@ -97,7 +110,6 @@ io.on('connection', (socket) => {
 
   // Client sends keystrokes
   socket.on('pty:input', ({ instanceId, data }: { instanceId: string; data: string }) => {
-    pendingAuthPrompts.delete(instanceId);
     ptyManager.write(instanceId, data);
   });
 
@@ -135,8 +147,16 @@ ptyManager.onAuthPrompt((instanceId) => {
   io.emit('instance:authPrompt', { instanceId });
 });
 
+// Forward auth cleared (user completed the auth action)
+ptyManager.onAuthCleared((instanceId) => {
+  pendingAuthPrompts.delete(instanceId);
+  io.emit('instance:authCleared', { instanceId });
+});
+
 // Forward task completion notifications
 ptyManager.onTaskComplete((instanceId) => {
+  const inst = store.getAll().find(i => i.id === instanceId);
+  if (inst) pendingTaskDone.set(instanceId, inst.name);
   io.emit('instance:taskComplete', { instanceId });
 });
 
@@ -148,6 +168,11 @@ ptyManager.onTokenStats((instanceId, stats) => {
 // Forward user prompt notifications
 ptyManager.onUserPrompt((instanceId, data) => {
   io.emit('instance:userPrompt', { instanceId, prompt: data.prompt });
+});
+
+// Forward output state changes
+ptyManager.onOutputState((instanceId, data) => {
+  io.emit('instance:outputState', { instanceId, outputting: data.outputting });
 });
 
 const PORT = process.env.PORT || 3000;

@@ -72,3 +72,9 @@ body {
   margin: 0.5em 0;
   color: #9ca3af;
 }
+
+/* Wave bounce animation for "正在工作" status text */
+@keyframes wave-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}

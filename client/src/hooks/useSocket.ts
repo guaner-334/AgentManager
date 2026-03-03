@@ -10,6 +10,7 @@ export function useSocket() {
   const [taskCompletes, setTaskCompletes] = useState<Set<string>>(new Set());
   const [tokenStats, setTokenStats] = useState<Map<string, { tokens: number; elapsed: string }>>(new Map());
   const [userPrompts, setUserPrompts] = useState<Map<string, string>>(new Map());
+  const [outputting, setOutputting] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const socket = io('/', {
@@ -30,6 +31,12 @@ export function useSocket() {
     // Initial sync
     socket.on('instances:sync', (data: InstanceWithRuntime[]) => {
       setInstances(data);
+      // Initialize outputting state from runtime data
+      const out = new Set<string>();
+      data.forEach(inst => {
+        if ((inst.runtime as any).outputting) out.add(inst.id);
+      });
+      setOutputting(out);
     });
 
     // Instance status updates
@@ -56,6 +63,15 @@ export function useSocket() {
       setAuthPrompts(prev => new Set(prev).add(instanceId));
     });
 
+    // Auth prompt cleared (user handled it via terminal input)
+    socket.on('instance:authCleared', ({ instanceId }: { instanceId: string }) => {
+      setAuthPrompts(prev => {
+        const next = new Set(prev);
+        next.delete(instanceId);
+        return next;
+      });
+    });
+
     // Task completion notifications
     socket.on('instance:taskComplete', ({ instanceId }: { instanceId: string }) => {
       setTaskCompletes(prev => new Set(prev).add(instanceId));
@@ -66,6 +82,16 @@ export function useSocket() {
       setTokenStats(prev => {
         const next = new Map(prev);
         next.set(instanceId, { tokens, elapsed });
+        return next;
+      });
+    });
+
+    // Output state changes
+    socket.on('instance:outputState', ({ instanceId, outputting }: { instanceId: string; outputting: boolean }) => {
+      setOutputting(prev => {
+        const next = new Set(prev);
+        if (outputting) next.add(instanceId);
+        else next.delete(instanceId);
         return next;
       });
     });
@@ -120,6 +146,7 @@ export function useSocket() {
     taskCompletes,
     tokenStats,
     userPrompts,
+    outputting,
     clearAuthPrompt,
     clearTaskComplete,
   };

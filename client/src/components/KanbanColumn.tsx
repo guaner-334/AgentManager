@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { InstanceWithRuntime, KanbanStatus } from '../types';
 import { InstanceCard } from './InstanceCard';
@@ -12,37 +12,68 @@ const COLUMN_CONFIG: Record<KanbanStatus, { title: string; color: string }> = {
 
 interface KanbanColumnProps {
   status: KanbanStatus;
+  customTitle?: string;
   instances: InstanceWithRuntime[];
   selectedId: string | null;
   authPrompts: Set<string>;
   taskCompletes: Set<string>;
   tokenStats: Map<string, { tokens: number; elapsed: string }>;
   userPrompts: Map<string, string>;
+  outputting: Set<string>;
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onShowSessions: (id: string) => void;
+  onRenameColumn?: (status: KanbanStatus, newTitle: string) => void;
 }
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   status,
+  customTitle,
   instances,
   selectedId,
   authPrompts,
   taskCompletes,
   tokenStats,
   userPrompts,
+  outputting,
   onSelect,
   onStart,
   onStop,
   onEdit,
   onDelete,
   onShowSessions,
+  onRenameColumn,
 }) => {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const config = COLUMN_CONFIG[status];
+  const title = customTitle || config.title;
+
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const handleDoubleClick = () => {
+    setEditValue(title);
+    setEditing(true);
+  };
+
+  const handleSubmit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== title && onRenameColumn) {
+      onRenameColumn(status, trimmed);
+    }
+    setEditing(false);
+  };
 
   return (
     <div
@@ -52,8 +83,28 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       }`}
     >
       <div className={`flex items-center gap-2 px-3 py-2 border-b-2 ${config.color}`}>
-        <h2 className="text-sm font-semibold text-gray-300">{config.title}</h2>
-        <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded-full">
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            onBlur={handleSubmit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleSubmit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            className="text-sm font-semibold text-gray-300 bg-gray-700 rounded px-1 py-0 outline-none border border-gray-600 w-full"
+          />
+        ) : (
+          <h2
+            className="text-sm font-semibold text-gray-300 cursor-pointer hover:text-gray-100"
+            onDoubleClick={handleDoubleClick}
+            title="双击编辑列名"
+          >
+            {title}
+          </h2>
+        )}
+        <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded-full flex-shrink-0">
           {instances.length}
         </span>
       </div>
@@ -68,6 +119,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             hasTaskComplete={taskCompletes.has(instance.id)}
             tokenStats={tokenStats.get(instance.id)}
             userPrompt={userPrompts.get(instance.id)}
+            isOutputting={outputting.has(instance.id)}
             onSelect={() => onSelect(instance.id)}
             onStart={() => onStart(instance.id)}
             onStop={() => onStop(instance.id)}

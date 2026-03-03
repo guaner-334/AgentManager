@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { InstanceWithRuntime, KanbanStatus } from '../types';
 import { KanbanColumn } from './KanbanColumn';
@@ -6,6 +6,16 @@ import { Plus, GripVertical, Play, Square, Settings, Trash2, FolderOpen, Globe, 
 import { StatusBadge } from './StatusBadge';
 
 const COLUMNS: KanbanStatus[] = ['todo', 'in-progress', 'review', 'done'];
+const COLUMN_NAMES_KEY = 'agentmanager:columnNames';
+
+function loadColumnNames(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(COLUMN_NAMES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 interface KanbanBoardProps {
   instances: InstanceWithRuntime[];
@@ -14,6 +24,7 @@ interface KanbanBoardProps {
   taskCompletes: Set<string>;
   tokenStats: Map<string, { tokens: number; elapsed: string }>;
   userPrompts: Map<string, string>;
+  outputting: Set<string>;
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
@@ -31,6 +42,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   taskCompletes,
   tokenStats,
   userPrompts,
+  outputting,
   onSelect,
   onStart,
   onStop,
@@ -49,6 +61,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   );
 
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  const [columnNames, setColumnNames] = useState<Record<string, string>>(loadColumnNames);
+
+  const handleRenameColumn = useCallback((status: KanbanStatus, newTitle: string) => {
+    setColumnNames(prev => {
+      const next = { ...prev, [status]: newTitle };
+      localStorage.setItem(COLUMN_NAMES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -90,18 +111,21 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             <KanbanColumn
               key={status}
               status={status}
+              customTitle={columnNames[status]}
               instances={instances.filter(i => i.kanbanStatus === status)}
               selectedId={selectedId}
               authPrompts={authPrompts}
               taskCompletes={taskCompletes}
               tokenStats={tokenStats}
               userPrompts={userPrompts}
+              outputting={outputting}
               onSelect={onSelect}
               onStart={onStart}
               onStop={onStop}
               onEdit={onEdit}
               onDelete={onDelete}
               onShowSessions={onShowSessions}
+              onRenameColumn={handleRenameColumn}
             />
           ))}
         </div>

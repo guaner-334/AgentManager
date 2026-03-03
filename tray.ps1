@@ -216,36 +216,52 @@ $healthTimer.Add_Tick({
 })
 $healthTimer.Start()
 
-# ── Auth prompt notification polling ──
-$script:notifiedIds = @{}
+# ── Notification polling (auth prompts + task completions) ──
+$script:notifiedAuthIds = @{}
 $notifyTimer = New-Object System.Windows.Forms.Timer
 $notifyTimer.Interval = 4000
 $notifyTimer.Add_Tick({
     try {
         $wc = New-Object System.Net.WebClient
+        $wc.Encoding = [System.Text.Encoding]::UTF8
         $json = $wc.DownloadString("$url/api/notifications")
         $wc.Dispose()
         $items = $json | ConvertFrom-Json
         if ($items -and $items.Count -gt 0) {
             foreach ($item in $items) {
                 $id = $item.instanceId
-                if (-not $script:notifiedIds.ContainsKey($id)) {
-                    $script:notifiedIds[$id] = $true
-                    $name = $item.instanceName
+                $name = $item.instanceName
+                $type = $item.type
+                if ($type -eq "auth") {
+                    if (-not $script:notifiedAuthIds.ContainsKey($id)) {
+                        $script:notifiedAuthIds[$id] = $true
+                        $notifyIcon.ShowBalloonTip(
+                            5000,
+                            "AgentManager",
+                            "[$name] 需要您的授权",
+                            [System.Windows.Forms.ToolTipIcon]::Warning
+                        )
+                    }
+                }
+                elseif ($type -eq "taskDone") {
                     $notifyIcon.ShowBalloonTip(
-                        5000,
+                        3000,
                         "AgentManager",
-                        "[$name] 需要您的授权",
-                        [System.Windows.Forms.ToolTipIcon]::Warning
+                        "[$name] 任务已完成，等待输入",
+                        [System.Windows.Forms.ToolTipIcon]::Info
                     )
                 }
             }
         }
-        # Clear resolved notifications
-        $currentIds = @{}
-        if ($items) { foreach ($item in $items) { $currentIds[$item.instanceId] = $true } }
-        $toRemove = @($script:notifiedIds.Keys | Where-Object { -not $currentIds.ContainsKey($_) })
-        foreach ($key in $toRemove) { $script:notifiedIds.Remove($key) }
+        # Clear resolved auth notifications
+        $currentAuthIds = @{}
+        if ($items) {
+            foreach ($item in $items) {
+                if ($item.type -eq "auth") { $currentAuthIds[$item.instanceId] = $true }
+            }
+        }
+        $toRemove = @($script:notifiedAuthIds.Keys | Where-Object { -not $currentAuthIds.ContainsKey($_) })
+        foreach ($key in $toRemove) { $script:notifiedAuthIds.Remove($key) }
     } catch {
         # Server not ready or network error — ignore
     }

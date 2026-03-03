@@ -11,6 +11,7 @@ interface InstanceCardProps {
   hasTaskComplete?: boolean;
   tokenStats?: { tokens: number; elapsed: string };
   userPrompt?: string;
+  isOutputting?: boolean;
   onSelect: () => void;
   onStart: () => void;
   onStop: () => void;
@@ -26,6 +27,7 @@ export const InstanceCard: React.FC<InstanceCardProps> = ({
   hasTaskComplete,
   tokenStats,
   userPrompt,
+  isOutputting,
   onSelect,
   onStart,
   onStop,
@@ -66,7 +68,7 @@ export const InstanceCard: React.FC<InstanceCardProps> = ({
           </span>
           <h3 className="font-medium text-sm truncate">{instance.name}</h3>
         </div>
-        <StatusBadge state={instance.runtime.processState} />
+        <StatusBadge state={instance.runtime.processState} outputting={isOutputting} />
         {hasAuthPrompt && (
           <span className="flex-shrink-0 text-amber-400 animate-pulse" title="Needs approval">
             <ShieldAlert size={14} />
