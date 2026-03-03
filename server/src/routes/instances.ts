@@ -173,4 +173,26 @@ router.get('/:id/sessions', (req, res) => {
   res.json(sessions);
 });
 
+// GET /api/instances/:id/sessions/:index/content - Get session log content
+router.get('/:id/sessions/:index/content', (req, res) => {
+  const { id, index } = req.params;
+  const instance = store.getById(id);
+  if (!instance) {
+    return res.status(404).json({ error: 'Instance not found' });
+  }
+
+  const sessionIndex = parseInt(index, 10);
+  if (isNaN(sessionIndex)) {
+    return res.status(400).json({ error: 'Invalid session index' });
+  }
+
+  const content = ptyManager.getSessionContent(id, sessionIndex);
+  if (content === null) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(content);
+});
+
 export default router;

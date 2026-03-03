@@ -370,10 +370,10 @@ class PtyManager {
     const startRegex = /--- Session started: (.+?) ---/g;
     const endRegex = /--- Session ended: (.+?) \(code=(.+?), signal=(.+?)\) ---/g;
 
-    const starts: { time: string; index: number }[] = [];
+    const starts: { time: string; index: number; endIndex: number }[] = [];
     let match;
     while ((match = startRegex.exec(content)) !== null) {
-      starts.push({ time: match[1], index: match.index });
+      starts.push({ time: match[1], index: match.index, endIndex: match.index + match[0].length });
     }
 
     const ends: { time: string; exitCode: string; signal: string; index: number }[] = [];
@@ -401,6 +401,34 @@ class PtyManager {
     }
 
     return sessions;
+  }
+
+  getSessionContent(instanceId: string, sessionIndex: number): string | null {
+    const logPath = this.getLogPath(instanceId);
+    if (!fs.existsSync(logPath)) return null;
+
+    const content = fs.readFileSync(logPath, 'utf-8');
+    const startRegex = /--- Session started: .+? ---\n?/g;
+    const endRegex = /\n?--- Session ended: .+? ---/g;
+
+    const starts: { index: number; endIndex: number }[] = [];
+    let match;
+    while ((match = startRegex.exec(content)) !== null) {
+      starts.push({ index: match.index, endIndex: match.index + match[0].length });
+    }
+
+    if (sessionIndex < 0 || sessionIndex >= starts.length) return null;
+
+    const contentStart = starts[sessionIndex].endIndex;
+
+    // Find the end marker for this session
+    endRegex.lastIndex = contentStart;
+    const endMatch = endRegex.exec(content);
+    const contentEnd = endMatch ? endMatch.index : (
+      sessionIndex + 1 < starts.length ? starts[sessionIndex + 1].index : content.length
+    );
+
+    return content.slice(contentStart, contentEnd);
   }
 }
 
