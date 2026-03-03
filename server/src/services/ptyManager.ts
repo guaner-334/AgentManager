@@ -109,13 +109,30 @@ class PtyManager {
     for (const [key, value] of Object.entries(process.env)) {
       // Filter out CLAUDE* vars to prevent nested-session detection
       // Keep ANTHROPIC* vars as fallback auth (Claude CLI needs them for startup check)
-      if (key.startsWith('CLAUDE') || value === undefined) continue;
+      // Keep CLAUDE_CODE_GIT_BASH_PATH — required on Windows for Claude Code to find git-bash
+      if ((key.startsWith('CLAUDE') && key !== 'CLAUDE_CODE_GIT_BASH_PATH') || value === undefined) continue;
       env[key] = value;
     }
     env.ComSpec = process.env.ComSpec || `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\cmd.exe`;
 
     if (!env.PATH && process.env.PATH) {
       env.PATH = process.env.PATH;
+    }
+
+    // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set so Claude Code can find git-bash
+    if (process.platform === 'win32' && !env.CLAUDE_CODE_GIT_BASH_PATH) {
+      const candidates = [
+        process.env.CLAUDE_CODE_GIT_BASH_PATH,
+        'D:\\Git\\bin\\bash.exe',
+        'C:\\Program Files\\Git\\bin\\bash.exe',
+        'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+      ];
+      for (const p of candidates) {
+        if (p && fs.existsSync(p)) {
+          env.CLAUDE_CODE_GIT_BASH_PATH = p;
+          break;
+        }
+      }
     }
 
     // Per-instance env overrides (lowest priority)

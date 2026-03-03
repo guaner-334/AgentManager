@@ -13,6 +13,7 @@ export const ConfigDialog: React.FC<ConfigDialogProps> = ({ instance, onSave, on
     name: '',
     workingDirectory: '',
     apiBaseUrl: '',
+    httpProxy: '',
     apiKey: '',
     model: '',
     systemPrompt: '',
@@ -23,10 +24,12 @@ export const ConfigDialog: React.FC<ConfigDialogProps> = ({ instance, onSave, on
 
   useEffect(() => {
     if (instance) {
+      const proxyValue = instance.env?.HTTP_PROXY || instance.env?.HTTPS_PROXY || '';
       setForm({
         name: instance.name || '',
         workingDirectory: instance.workingDirectory || '',
         apiBaseUrl: instance.apiBaseUrl || '',
+        httpProxy: proxyValue,
         apiKey: instance.apiKey || '',
         model: instance.model || '',
         systemPrompt: instance.systemPrompt || '',
@@ -35,7 +38,9 @@ export const ConfigDialog: React.FC<ConfigDialogProps> = ({ instance, onSave, on
       });
       setEnvEntries(
         instance.env
-          ? Object.entries(instance.env).map(([key, value]) => ({ key, value }))
+          ? Object.entries(instance.env)
+              .filter(([key]) => key !== 'HTTP_PROXY' && key !== 'HTTPS_PROXY')
+              .map(([key, value]) => ({ key, value }))
           : []
       );
     }
@@ -44,6 +49,10 @@ export const ConfigDialog: React.FC<ConfigDialogProps> = ({ instance, onSave, on
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const env: Record<string, string> = {};
+    if (form.httpProxy.trim()) {
+      env['HTTP_PROXY'] = form.httpProxy.trim();
+      env['HTTPS_PROXY'] = form.httpProxy.trim();
+    }
     for (const { key, value } of envEntries) {
       if (key.trim()) env[key.trim()] = value;
     }
@@ -55,8 +64,8 @@ export const ConfigDialog: React.FC<ConfigDialogProps> = ({ instance, onSave, on
       model: form.model || undefined,
       systemPrompt: form.systemPrompt || undefined,
       permissionMode: form.permissionMode,
-      claudeConfigDir: form.claudeConfigDir || undefined,
-      env: Object.keys(env).length > 0 ? env : undefined,
+      claudeConfigDir: form.claudeConfigDir || '',
+      env: Object.keys(env).length > 0 ? env : {},
     });
   };
 
@@ -111,6 +120,20 @@ export const ConfigDialog: React.FC<ConfigDialogProps> = ({ instance, onSave, on
               className="w-full bg-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="留空使用默认 Anthropic API"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">HTTP 代理</label>
+            <input
+              type="text"
+              value={form.httpProxy}
+              onChange={e => setForm(f => ({ ...f, httpProxy: e.target.value }))}
+              className="w-full bg-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="例如: http://127.0.0.1:7890"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              自动设置 HTTP_PROXY 和 HTTPS_PROXY 环境变量
+            </p>
           </div>
 
           <div>

@@ -24,7 +24,7 @@ router.get('/', (req, res) => {
 
 // POST /api/instances - 创建实例
 router.post('/', (req, res) => {
-  const { name, apiBaseUrl, apiKey, workingDirectory, model, systemPrompt, permissionMode, kanbanStatus } = req.body;
+  const { name, apiBaseUrl, apiKey, workingDirectory, model, systemPrompt, permissionMode, kanbanStatus, env, claudeConfigDir } = req.body;
 
   if (!name || !workingDirectory) {
     return res.status(400).json({ error: 'name and workingDirectory are required' });
@@ -40,6 +40,8 @@ router.post('/', (req, res) => {
     systemPrompt: systemPrompt || undefined,
     permissionMode: permissionMode || 'bypassPermissions',
     kanbanStatus: kanbanStatus || 'todo',
+    env: env || undefined,
+    claudeConfigDir: claudeConfigDir || undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -57,7 +59,7 @@ router.put('/:id', (req, res) => {
   }
 
   const updates: Partial<Instance> = {};
-  const allowedFields = ['name', 'apiBaseUrl', 'apiKey', 'workingDirectory', 'model', 'systemPrompt', 'permissionMode', 'kanbanStatus'];
+  const allowedFields = ['name', 'apiBaseUrl', 'apiKey', 'workingDirectory', 'model', 'systemPrompt', 'permissionMode', 'kanbanStatus', 'env', 'claudeConfigDir'];
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) {
       (updates as any)[field] = req.body[field];
