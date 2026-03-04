@@ -25,6 +25,7 @@ interface KanbanBoardProps {
   tokenStats: Map<string, { tokens: number; elapsed: string }>;
   userPrompts: Map<string, string>;
   outputting: Set<string>;
+  startingIds: Set<string>;
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
@@ -43,6 +44,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   tokenStats,
   userPrompts,
   outputting,
+  startingIds,
   onSelect,
   onStart,
   onStop,
@@ -95,7 +97,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-        <h1 className="text-lg font-bold">AgentManager</h1>
+        <h1 className="text-lg font-bold">AgentManager <span className="text-xs font-normal text-gray-500">v1.0.0</span></h1>
         <button
           onClick={onCreateNew}
           className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
@@ -119,6 +121,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               tokenStats={tokenStats}
               userPrompts={userPrompts}
               outputting={outputting}
+              startingIds={startingIds}
               onSelect={onSelect}
               onStart={onStart}
               onStop={onStop}

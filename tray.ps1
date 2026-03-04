@@ -45,6 +45,19 @@ $ig.DrawString("A", $iFont, [System.Drawing.Brushes]::White, (New-Object System.
 $ig.Dispose(); $iFont.Dispose(); $isf.Dispose()
 $trayIcon = [System.Drawing.Icon]::FromHandle($iconBmp.GetHicon())
 
+# ── Check Node.js ──
+$nodeCheck = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCheck) {
+    [System.Windows.Forms.MessageBox]::Show(
+        "Node.js 未找到！请先安装 Node.js 18+。`n`n安装方法：`n1. 访问 https://nodejs.org 下载安装`n2. 或运行同目录下的 setup.ps1（需要管理员权限）",
+        "AgentManager - 缺少 Node.js",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Error
+    )
+    $mutex.Dispose()
+    exit 1
+}
+
 # ── Start Server ──
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = "node"
@@ -218,6 +231,7 @@ $healthTimer.Start()
 
 # ── Notification polling (auth prompts + task completions) ──
 $script:notifiedAuthIds = @{}
+$script:notifiedTaskDoneIds = @{}
 $notifyTimer = New-Object System.Windows.Forms.Timer
 $notifyTimer.Interval = 4000
 $notifyTimer.Add_Tick({
@@ -244,24 +258,32 @@ $notifyTimer.Add_Tick({
                     }
                 }
                 elseif ($type -eq "taskDone") {
-                    $notifyIcon.ShowBalloonTip(
-                        3000,
-                        "AgentManager",
-                        "[$name] 任务已完成，等待输入",
-                        [System.Windows.Forms.ToolTipIcon]::Info
-                    )
+                    # 只在首次检测到时显示，避免切换实例时重复弹通知
+                    if (-not $script:notifiedTaskDoneIds.ContainsKey($id)) {
+                        $script:notifiedTaskDoneIds[$id] = $true
+                        $notifyIcon.ShowBalloonTip(
+                            3000,
+                            "AgentManager",
+                            "[$name] 任务已完成，等待输入",
+                            [System.Windows.Forms.ToolTipIcon]::Info
+                        )
+                    }
                 }
             }
         }
-        # Clear resolved auth notifications
+        # Clear resolved notifications
         $currentAuthIds = @{}
+        $currentTaskDoneIds = @{}
         if ($items) {
             foreach ($item in $items) {
                 if ($item.type -eq "auth") { $currentAuthIds[$item.instanceId] = $true }
+                if ($item.type -eq "taskDone") { $currentTaskDoneIds[$item.instanceId] = $true }
             }
         }
-        $toRemove = @($script:notifiedAuthIds.Keys | Where-Object { -not $currentAuthIds.ContainsKey($_) })
-        foreach ($key in $toRemove) { $script:notifiedAuthIds.Remove($key) }
+        $toRemoveAuth = @($script:notifiedAuthIds.Keys | Where-Object { -not $currentAuthIds.ContainsKey($_) })
+        foreach ($key in $toRemoveAuth) { $script:notifiedAuthIds.Remove($key) }
+        $toRemoveTask = @($script:notifiedTaskDoneIds.Keys | Where-Object { -not $currentTaskDoneIds.ContainsKey($_) })
+        foreach ($key in $toRemoveTask) { $script:notifiedTaskDoneIds.Remove($key) }
     } catch {
         # Server not ready or network error — ignore
     }

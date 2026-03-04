@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { Play, Square, Settings, Trash2, FolderOpen, GripVertical, Globe, History, ShieldAlert, CheckCircle, ArrowDown } from 'lucide-react';
+import { Play, Square, Settings, Trash2, FolderOpen, GripVertical, Globe, History, ShieldAlert, CheckCircle, ArrowDown, Loader2 } from 'lucide-react';
 import { InstanceWithRuntime } from '../types';
 import { StatusBadge } from './StatusBadge';
 
@@ -12,6 +12,7 @@ interface InstanceCardProps {
   tokenStats?: { tokens: number; elapsed: string };
   userPrompt?: string;
   isOutputting?: boolean;
+  isStarting?: boolean;
   onSelect: () => void;
   onStart: () => void;
   onStop: () => void;
@@ -28,6 +29,7 @@ export const InstanceCard: React.FC<InstanceCardProps> = ({
   tokenStats,
   userPrompt,
   isOutputting,
+  isStarting,
   onSelect,
   onStart,
   onStop,
@@ -116,10 +118,11 @@ export const InstanceCard: React.FC<InstanceCardProps> = ({
         {!isRunning ? (
           <button
             onClick={onStart}
-            className="p-1.5 rounded hover:bg-gray-700 text-green-400 hover:text-green-300"
-            title="启动"
+            disabled={isStarting}
+            className={`p-1.5 rounded hover:bg-gray-700 ${isStarting ? 'text-gray-500 cursor-not-allowed' : 'text-green-400 hover:text-green-300'}`}
+            title={isStarting ? '启动中...' : '启动'}
           >
-            <Play size={14} />
+            {isStarting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
           </button>
         ) : (
           <button

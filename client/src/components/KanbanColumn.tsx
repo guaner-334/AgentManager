@@ -20,6 +20,7 @@ interface KanbanColumnProps {
   tokenStats: Map<string, { tokens: number; elapsed: string }>;
   userPrompts: Map<string, string>;
   outputting: Set<string>;
+  startingIds: Set<string>;
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
@@ -39,6 +40,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   tokenStats,
   userPrompts,
   outputting,
+  startingIds,
   onSelect,
   onStart,
   onStop,
@@ -120,6 +122,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             tokenStats={tokenStats.get(instance.id)}
             userPrompt={userPrompts.get(instance.id)}
             isOutputting={outputting.has(instance.id)}
+            isStarting={startingIds.has(instance.id)}
             onSelect={() => onSelect(instance.id)}
             onStart={() => onStart(instance.id)}
             onStop={() => onStop(instance.id)}

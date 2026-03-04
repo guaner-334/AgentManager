@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSocket } from './hooks/useSocket';
 import { KanbanBoard } from './components/KanbanBoard';
 import { TerminalPanel } from './components/TerminalPanel';
@@ -17,6 +17,8 @@ const App: React.FC = () => {
   const [editingInstance, setEditingInstance] = useState<Instance | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [sessionHistoryId, setSessionHistoryId] = useState<string | null>(null);
+  const [startingIds, setStartingIds] = useState<Set<string>>(new Set());
+  const startingIdsRef = useRef<Set<string>>(new Set());
 
   // Refresh instances on mount
   useEffect(() => {
@@ -32,6 +34,11 @@ const App: React.FC = () => {
   }, [clearTaskComplete]);
 
   const handleStart = useCallback(async (id: string) => {
+    // 通过 ref 检查防止重复启动，避免将 state 放入依赖数组
+    if (startingIdsRef.current.has(id)) return;
+
+    startingIdsRef.current.add(id);
+    setStartingIds(new Set(startingIdsRef.current));
     try {
       const res = await fetch(`/api/instances/${id}/start`, { method: 'POST' });
       const data = await res.json();
@@ -45,6 +52,9 @@ const App: React.FC = () => {
       clearTaskComplete(id);
     } catch (err) {
       console.error('Failed to start instance:', err);
+    } finally {
+      startingIdsRef.current.delete(id);
+      setStartingIds(new Set(startingIdsRef.current));
     }
   }, [setInstances, clearTaskComplete]);
 
@@ -164,6 +174,7 @@ const App: React.FC = () => {
             tokenStats={tokenStats}
             userPrompts={userPrompts}
             outputting={outputting}
+            startingIds={startingIds}
             onSelect={handleSelect}
             onStart={handleStart}
             onStop={handleStop}
